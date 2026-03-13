@@ -1,0 +1,362 @@
+/**
+ * Puck API Endpoint Handlers
+ *
+ * These handlers are registered via config.endpoints in the plugin.
+ * They provide CRUD operations for Puck-enabled collections.
+ */ import { APIError } from 'payload';
+import { unsetHomepage, HomepageConflictError } from '../plugin/hooks/isHomepageUnique.js';
+import { resolveLocale } from '../utils/locale.js';
+/**
+ * GET /api/puck/:collection
+ * List all documents in a Puck-enabled collection
+ */ export function createListHandler(options) {
+    const { collections } = options;
+    return async (req)=>{
+        try {
+            const collection = req.routeParams?.collection;
+            if (!collections.includes(collection)) {
+                return Response.json({
+                    error: `Collection '${collection}' is not configured for Puck`
+                }, {
+                    status: 400
+                });
+            }
+            const body = await req.json?.();
+            const { _locale, ...data } = body || {};
+            const locale = resolveLocale(req, _locale);
+            const result = await req.payload.find({
+                collection: collection,
+                draft: true,
+                depth: 0,
+                limit: 100,
+                ...locale ? {
+                    locale: locale.toString()
+                } : {}
+            });
+            return Response.json(result);
+        } catch (error) {
+            console.error('[payload-puck] List error:', error);
+            return Response.json({
+                error: error instanceof Error ? error.message : 'List failed'
+            }, {
+                status: 500
+            });
+        }
+    };
+}
+/**
+ * POST /api/puck/:collection
+ * Create a new document in a Puck-enabled collection
+ */ export function createCreateHandler(options) {
+    const { collections } = options;
+    return async (req)=>{
+        try {
+            const collection = req.routeParams?.collection;
+            if (!collections.includes(collection)) {
+                return Response.json({
+                    error: `Collection '${collection}' is not configured for Puck`
+                }, {
+                    status: 400
+                });
+            }
+            const body = await req.json?.();
+            const { _locale, ...data } = body || {};
+            let locale = resolveLocale(req, _locale);
+            const referrer = req.headers.get('referer');
+            if (referrer && !locale) {
+                const { searchParams } = new URL(referrer);
+                locale = searchParams.get('locale') || undefined;
+            }
+            const doc = await req.payload.create({
+                collection: collection,
+                data,
+                draft: true,
+                ...locale ? {
+                    locale: locale.toString()
+                } : {}
+            });
+            return Response.json({
+                doc
+            });
+        } catch (error) {
+            console.error('[payload-puck] Create error:', error);
+            return Response.json({
+                error: error instanceof Error ? error.message : 'Create failed'
+            }, {
+                status: 500
+            });
+        }
+    };
+}
+/**
+ * GET /api/puck/:collection/:id
+ * Get a single document by ID
+ */ export function createGetHandler(options) {
+    const { collections } = options;
+    return async (req)=>{
+        try {
+            const collection = req.routeParams?.collection;
+            const id = req.routeParams?.id;
+            if (!collections.includes(collection)) {
+                return Response.json({
+                    error: `Collection '${collection}' is not configured for Puck`
+                }, {
+                    status: 400
+                });
+            }
+            const body = await req.json?.();
+            const { _locale, ...data } = body || {};
+            const locale = resolveLocale(req, _locale);
+            const doc = await req.payload.findByID({
+                collection: collection,
+                id,
+                draft: true,
+                depth: 0,
+                ...locale ? {
+                    locale: locale.toString()
+                } : {}
+            });
+            return Response.json({
+                doc
+            });
+        } catch (error) {
+            console.error('[payload-puck] Get error:', error);
+            return Response.json({
+                error: error instanceof Error ? error.message : 'Get failed'
+            }, {
+                status: 500
+            });
+        }
+    };
+}
+/**
+ * PATCH /api/puck/:collection/:id
+ * Update a document (supports draft saving, publishing, and homepage swapping)
+ */ export function createUpdateHandler(options) {
+    const { collections } = options;
+    return async (req)=>{
+        try {
+            const collection = req.routeParams?.collection;
+            const id = req.routeParams?.id;
+            if (!collections.includes(collection)) {
+                return Response.json({
+                    error: `Collection '${collection}' is not configured for Puck`
+                }, {
+                    status: 400
+                });
+            }
+            const body = await req.json?.();
+            const { _status, _locale, swapHomepage, ...data } = body || {};
+            let locale = resolveLocale(req, _locale);
+            const referrer = req.headers.get('referer');
+            if (referrer && !locale) {
+                const { searchParams } = new URL(referrer);
+                locale = searchParams.get('locale') || undefined;
+            }
+            // Determine if this is a publish or draft save
+            const shouldPublish = _status === 'published';
+            // Handle homepage swap if requested
+            // When swapHomepage is true and isHomepage is being set to true,
+            // we need to unset the current homepage first
+            if (swapHomepage && data.isHomepage === true) {
+                // Find the current homepage
+                const existingHomepage = await req.payload.find({
+                    collection: collection,
+                    where: {
+                        and: [
+                            {
+                                isHomepage: {
+                                    equals: true
+                                }
+                            },
+                            {
+                                id: {
+                                    not_equals: id
+                                }
+                            }
+                        ]
+                    },
+                    limit: 1,
+                    depth: 0,
+                    ...locale ? {
+                        locale: locale.toString()
+                    } : {}
+                });
+                // Unset the existing homepage if found
+                if (existingHomepage.docs.length > 0) {
+                    const existingId = String(existingHomepage.docs[0].id);
+                    await unsetHomepage(req.payload, collection, existingId, locale);
+                }
+            }
+            const doc = await req.payload.update({
+                collection: collection,
+                id,
+                data: {
+                    ...data,
+                    _status: shouldPublish ? 'published' : 'draft'
+                },
+                draft: !shouldPublish,
+                // Skip the isHomepage hook if we've already handled the swap
+                context: swapHomepage ? {
+                    skipIsHomepageHook: true
+                } : undefined,
+                ...locale ? {
+                    locale: locale.toString()
+                } : {}
+            });
+            return Response.json({
+                doc,
+                published: shouldPublish
+            });
+        } catch (error) {
+            console.error('[payload-puck] Update error:', error);
+            // Handle HomepageConflictError specially - pass through existingHomepage data
+            if (error instanceof HomepageConflictError) {
+                return Response.json({
+                    error: error.message,
+                    data: {
+                        existingHomepage: error.existingHomepage
+                    }
+                }, {
+                    status: 400
+                });
+            }
+            // Handle other APIErrors
+            if (error instanceof APIError) {
+                return Response.json({
+                    error: error.message,
+                    data: error.data
+                }, {
+                    status: error.status || 500
+                });
+            }
+            return Response.json({
+                error: error instanceof Error ? error.message : 'Update failed'
+            }, {
+                status: 500
+            });
+        }
+    };
+}
+/**
+ * DELETE /api/puck/:collection/:id
+ * Delete a document
+ */ export function createDeleteHandler(options) {
+    const { collections } = options;
+    return async (req)=>{
+        try {
+            const collection = req.routeParams?.collection;
+            const id = req.routeParams?.id;
+            if (!collections.includes(collection)) {
+                return Response.json({
+                    error: `Collection '${collection}' is not configured for Puck`
+                }, {
+                    status: 400
+                });
+            }
+            await req.payload.delete({
+                collection: collection,
+                id
+            });
+            return Response.json({
+                success: true
+            });
+        } catch (error) {
+            console.error('[payload-puck] Delete error:', error);
+            return Response.json({
+                error: error instanceof Error ? error.message : 'Delete failed'
+            }, {
+                status: 500
+            });
+        }
+    };
+}
+/**
+ * GET /api/puck/:collection/:id/versions
+ * Get version history for a document
+ */ export function createVersionsHandler(options) {
+    const { collections } = options;
+    return async (req)=>{
+        const locale = resolveLocale(req);
+        try {
+            const collection = req.routeParams?.collection;
+            const id = req.routeParams?.id;
+            if (!collections.includes(collection)) {
+                return Response.json({
+                    error: `Collection '${collection}' is not configured for Puck`
+                }, {
+                    status: 400
+                });
+            }
+            const versions = await req.payload.findVersions({
+                collection: collection,
+                where: {
+                    parent: {
+                        equals: id
+                    }
+                },
+                sort: '-updatedAt',
+                limit: 20,
+                ...locale ? {
+                    locale: locale.toString(),
+                    fallbackLocale: false
+                } : {}
+            });
+            return Response.json({
+                versions: versions.docs
+            });
+        } catch (error) {
+            console.error('[payload-puck] Versions error:', error);
+            return Response.json({
+                error: error instanceof Error ? error.message : 'Versions failed'
+            }, {
+                status: 500
+            });
+        }
+    };
+}
+/**
+ * POST /api/puck/:collection/:id/restore
+ * Restore a specific version
+ */ export function createRestoreHandler(options) {
+    const { collections } = options;
+    return async (req)=>{
+        try {
+            const collection = req.routeParams?.collection;
+            const id = req.routeParams?.id;
+            if (!collections.includes(collection)) {
+                return Response.json({
+                    error: `Collection '${collection}' is not configured for Puck`
+                }, {
+                    status: 400
+                });
+            }
+            const body = await req.json?.();
+            const { versionId, locale } = body || {};
+            if (!versionId) {
+                return Response.json({
+                    error: 'Missing versionId in request body'
+                }, {
+                    status: 400
+                });
+            }
+            const doc = await req.payload.restoreVersion({
+                collection: collection,
+                id: versionId,
+                ...locale ? {
+                    locale: locale.toString()
+                } : {}
+            });
+            return Response.json({
+                doc
+            });
+        } catch (error) {
+            console.error('[payload-puck] Restore error:', error);
+            return Response.json({
+                error: error instanceof Error ? error.message : 'Restore failed'
+            }, {
+                status: 500
+            });
+        }
+    };
+}
