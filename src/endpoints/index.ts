@@ -33,7 +33,7 @@ export function createListHandler(options: PuckEndpointOptions): PayloadHandler 
       }
 
       const body = await req.json?.()
-      const { _locale, ...data } = body || {}
+      const { _locale } = body || {}
       const locale = resolveLocale(req, _locale)
 
       const result = await req.payload.find({
@@ -119,7 +119,7 @@ export function createGetHandler(options: PuckEndpointOptions): PayloadHandler {
         )
       }
       const body = await req.json?.()
-      const { _locale, ...data } = body || {}
+      const { _locale } = body || {}
       const locale = resolveLocale(req, _locale)
 
       const doc = await req.payload.findByID({
@@ -205,8 +205,12 @@ export function createUpdateHandler(options: PuckEndpointOptions): PayloadHandle
           _status: shouldPublish ? 'published' : 'draft',
         },
         draft: !shouldPublish,
-        // Skip the isHomepage hook if we've already handled the swap
-        context: swapHomepage ? { skipIsHomepageHook: true } : undefined,
+        context: {
+          // Skip the isHomepage hook if we've already handled the swap
+          ...((swapHomepage || locale) && { skipIsHomepageHook: swapHomepage }),
+          // Pass locale to context so hooks can access it without re-reading body
+          ...(locale && { locale }),
+        },
         ...(locale ? { locale: locale.toString() } : {}),
       })
 

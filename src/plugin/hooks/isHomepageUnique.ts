@@ -1,6 +1,5 @@
 import type { CollectionBeforeChangeHook } from 'payload'
 import { APIError } from 'payload'
-import { resolveLocale } from '../../utils/locale'
 
 /**
  * Information about an existing homepage page
@@ -82,9 +81,8 @@ export function createIsHomepageUniqueHook(
     }
 
     const collectionSlug = options.collectionSlug || collection.slug
-    const body = await req.json?.()
-    const { _locale } = body || {}
-    const locale = resolveLocale(req, _locale)
+    // Use locale from context (passed by endpoint handler) or fall back to req.locale
+    const locale = context?.locale || req.locale
 
     // Query for existing homepage (excluding current document)
     const existingHomepage = await req.payload.find({
