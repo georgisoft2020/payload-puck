@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.25] - 2026-05-16
+
+### Changed
+
+- Bumped `payload`, `@payloadcms/next`, `@payloadcms/ui` dev dependencies to `^3.84.1` (from 3.79.0). Picks up patched transitives (`ajv` 8.18.0, `lodash` 4.18.1, `fast-uri` 3.1.2), clearing the high-severity lodash code-injection and fast-uri path-traversal/host-confusion CVEs from the dev tree. Peer dependency range (`>=3.69.0`) is unchanged — consumers are unaffected.
+
 ## [0.6.24] - 2026-05-16
 
 ### Changed
