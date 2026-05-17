@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.24] - 2026-05-16
+
+### Changed
+
+- Bumped `next` dev dependency to `^16.2.6` to clear [CVE-2026-44574](https://github.com/vercel/next.js/security/advisories/GHSA-492v-c6pp-mqqv) (middleware/proxy bypass via dynamic route parameter injection). The plugin itself ships no middleware and is not exploitable, but the dev-dep range was inside the vulnerable window.
+- Documented the CVE in the README requirements so consumers using Next.js middleware know the minimum patched versions (15.5.16 / 16.2.5, or 15.5.18 / 16.2.6 for Turbopack).
+
 ## [0.6.23] - 2026-04-06
 
 ### Fixed

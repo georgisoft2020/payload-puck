@@ -37,10 +37,12 @@ pnpm add @delmaredigital/payload-puck @puckeditor/core
 | `@puckeditor/core` | >= 0.21.0 |
 | `payload` | >= 3.69.0 |
 | `@payloadcms/next` | >= 3.69.0 |
-| `next` | >= 15.4.8 |
+| `next` | >= 15.4.8 (see security note below) |
 | `react` | >= 19.2.1 |
 
 > **Note:** Puck 0.21+ moved from `@measured/puck` to `@puckeditor/core`. This plugin requires the new package scope.
+
+> **Security:** If your app uses Next.js middleware (or proxy.ts) to protect dynamic routes, use `next` >= 15.5.16 / 16.2.5 to pick up the fix for [CVE-2026-44574](https://github.com/vercel/next.js/security/advisories/GHSA-492v-c6pp-mqqv) (middleware bypass via dynamic route parameter injection). Turbopack users need >= 15.5.18 / 16.2.6.
 
 ---
 
