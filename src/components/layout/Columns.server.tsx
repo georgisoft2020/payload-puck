@@ -17,7 +17,6 @@
 
 import type { ComponentConfig } from '@puckeditor/core'
 import {
-  cn,
   dimensionsValueToCSS,
   marginValueToCSS,
   paddingValueToCSS,
@@ -175,20 +174,18 @@ export const ColumnsConfig: ComponentConfig = {
     const visibilityCSS = visibilityValueToCSS(visibility, wrapperClass)
     if (visibilityCSS) mediaQueries.push(visibilityCSS)
 
-    // Tailwind: flex column on mobile, grid on md+
-    const contentClasses = cn('flex flex-col w-full', 'md:grid', contentClass)
-
-    const contentStyles: React.CSSProperties = {
-      gap,
-      ...dimensionsResult.baseStyles,
-    }
     if (dimensionsResult.mediaQueryCSS) mediaQueries.push(dimensionsResult.mediaQueryCSS)
 
-    // grid-template-columns is dynamic, so drive it from a CSS var and scope the
-    // media-query rule to this instance's content class (no cross-instance leak).
+    // Self-contained CSS grid — does NOT depend on the consumer's Tailwind
+    // generating utility classes. Single column on mobile (stacked); switches to
+    // the multi-column template at >=768px via the scoped media query below.
+    // grid-template-columns is dynamic, so drive it from a CSS var.
     const colsTemplate = resolveColumnsTemplate(safeCount, distribution)
     const gridStyles: React.CSSProperties = {
-      ...contentStyles,
+      display: 'grid',
+      gridTemplateColumns: '1fr',
+      gap,
+      ...dimensionsResult.baseStyles,
       '--cols-template': colsTemplate,
     } as React.CSSProperties
 
@@ -199,7 +196,7 @@ export const ColumnsConfig: ComponentConfig = {
       <AnimatedWrapper animation={animation}>
         {allMediaQueryCSS && <style>{allMediaQueryCSS}</style>}
         <div className={wrapperClass} style={wrapperStyles}>
-          <div className={contentClasses} style={gridStyles}>
+          <div className={contentClass} style={gridStyles}>
             {slots.slice(0, safeCount).map((Slot, i) => {
               const ColumnSlot = Slot as any
               return <ColumnSlot key={i} />

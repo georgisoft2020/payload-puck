@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.28] - 2026-06-03
+
+### Fixed
+
+- **`Grid` and `Columns` now lay out correctly without requiring the consumer's Tailwind to generate the plugin's utility classes.** Both components previously relied on Tailwind classes (`flex flex-col w-full md:grid`) for their `display: grid` / responsive behavior, while only the dynamic `grid-template-columns` came from an inline `<style>`. In projects whose Tailwind build doesn't scan the plugin's `dist` (so those utilities, especially the `md:` variant, are never emitted), the container stayed a plain block and children stacked vertically at all widths. The grid is now fully self-contained: `display: grid` is applied inline (single column on mobile, multi-column at ≥768px via a scoped media query), with no dependency on consumer Tailwind classes. ([#10](https://github.com/delmaredigital/payload-puck/issues/10))
+
 ## [0.6.27] - 2026-06-03
 
 ### Added

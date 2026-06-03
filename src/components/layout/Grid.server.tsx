@@ -17,7 +17,6 @@
 
 import type { ComponentConfig } from '@puckeditor/core'
 import {
-  cn,
   dimensionsValueToCSS,
   marginValueToCSS,
   paddingValueToCSS,
@@ -153,25 +152,19 @@ export const GridConfig: ComponentConfig = {
       mediaQueries.push(visibilityCSS)
     }
 
-    // Tailwind classes for responsive grid: flex column on mobile, grid on md+
-    const contentClasses = cn(
-      'flex flex-col w-full',
-      'md:grid',
-      contentClass,
-    )
-
-    // Dynamic styles that need inline (user-controlled values: gap, columns)
-    const contentStyles: React.CSSProperties = {
-      gap,
-      ...dimensionsResult.baseStyles,
-    }
     if (dimensionsResult.mediaQueryCSS) {
       mediaQueries.push(dimensionsResult.mediaQueryCSS)
     }
 
-    // Grid template columns must be inline since numColumns is dynamic
+    // Self-contained CSS grid — does NOT depend on the consumer's Tailwind
+    // generating utility classes. Single column on mobile (children stacked);
+    // switches to the multi-column track at >=768px via the scoped media query.
+    // grid-template-columns is dynamic, so drive the column count from a CSS var.
     const gridStyles: React.CSSProperties = {
-      ...contentStyles,
+      display: 'grid',
+      gridTemplateColumns: '1fr',
+      gap,
+      ...dimensionsResult.baseStyles,
       '--grid-cols': numColumns,
     } as React.CSSProperties
 
@@ -185,10 +178,10 @@ export const GridConfig: ComponentConfig = {
       <AnimatedWrapper animation={animation}>
         {allMediaQueryCSS && <style>{allMediaQueryCSS}</style>}
         <Wrapper className={wrapperClass} style={wrapperStyles}>
-          <ContentSlot className={contentClasses} style={gridStyles} />
+          <ContentSlot className={contentClass} style={gridStyles} />
           <style>{`
             @media (min-width: 768px) {
-              .flex.md\\:grid {
+              .${contentClass} {
                 grid-template-columns: repeat(var(--grid-cols), 1fr);
               }
             }
