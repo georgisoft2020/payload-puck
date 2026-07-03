@@ -19,6 +19,18 @@ interface CssCache {
 const cssCache = new Map<string, CssCache>()
 
 /**
+ * Wraps compiled CSS in a named CSS layer so it can never out-prioritize
+ * unlayered host-page CSS (e.g. Payload's own admin styles), per the CSS
+ * Cascading Layers spec: unlayered styles always win over layered ones,
+ * regardless of specificity or source order. Inside the Puck iframe, where
+ * this is the only stylesheet present, the layer has no effect on whether
+ * rules apply — only on cross-stylesheet priority.
+ */
+function wrapInLayer(css: string): string {
+  return `@layer puck-editor-preview {\n${css}\n}\n`
+}
+
+/**
  * Compile CSS using PostCSS with the project's configuration
  * Loads postcss.config.js from project root for proper plugin setup
  * Falls back to minimal Tailwind-only config if no config file found
@@ -132,11 +144,12 @@ export function createStylesHandler(cssFilePath: string): PayloadHandler {
       // Read and compile CSS
       const rawCss = readFileSync(fullPath, 'utf-8')
       const compiledCss = await compileCss(rawCss, fullPath)
+      const wrappedCss = wrapInLayer(compiledCss)
 
       // Update cache
-      cssCache.set(cssFilePath, { css: compiledCss, mtime })
+      cssCache.set(cssFilePath, { css: wrappedCss, mtime })
 
-      return new Response(compiledCss, {
+      return new Response(wrappedCss, {
         headers: {
           'Content-Type': 'text/css',
           'Cache-Control': 'public, max-age=31536000, immutable',

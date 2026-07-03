@@ -50,6 +50,18 @@ export interface WithPuckCSSOptions {
 export const PUCK_CSS_OUTPUT_DEFAULT = 'puck-editor-styles.css'
 
 /**
+ * Wraps compiled CSS in a named CSS layer so it can never out-prioritize
+ * unlayered host-page CSS (e.g. Payload's own admin styles), per the CSS
+ * Cascading Layers spec: unlayered styles always win over layered ones,
+ * regardless of specificity or source order. Inside the Puck iframe, where
+ * this is the only stylesheet present, the layer has no effect on whether
+ * rules apply — only on cross-stylesheet priority.
+ */
+function wrapInLayer(css: string): string {
+  return `@layer puck-editor-preview {\n${css}\n}\n`
+}
+
+/**
  * Compile CSS using PostCSS with the project's configuration
  */
 async function compileCss(css: string, filePath: string): Promise<string> {
@@ -141,7 +153,7 @@ class PuckCSSWebpackPlugin {
         }
 
         // Write compiled CSS
-        writeFileSync(outputPath, compiledCss, 'utf-8')
+        writeFileSync(outputPath, wrapInLayer(compiledCss), 'utf-8')
 
         console.log(`[payload-puck] CSS compiled successfully (${(compiledCss.length / 1024).toFixed(1)}KB)`)
       } catch (error) {
