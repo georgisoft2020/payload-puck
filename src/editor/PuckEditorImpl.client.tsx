@@ -369,7 +369,7 @@ export function PuckEditorImpl({
   const mergedEditorStylesheets = useMemo(() => {
     const fromBase = baseStylesheets || []
     const fromLayout = currentLayout?.editorStylesheets || []
-    return [...fromBase, ...fromLayout]
+    return [...new Set([...fromBase, ...fromLayout])]
   }, [baseStylesheets, currentLayout?.editorStylesheets])
 
   // Merge base CSS (props/context) + layout-specific settings
