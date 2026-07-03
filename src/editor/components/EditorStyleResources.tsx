@@ -49,14 +49,9 @@ export function EditorStyleResources({ stylesheets, css }: EditorStyleResourcesP
       {stylesheets?.map((href) => (
         <link key={href} rel="stylesheet" href={href} precedence="puck-editor-styles" />
       ))}
-      {/* Wrapped in the same CSS layer as the compiled stylesheet (see
-          src/endpoints/styles.ts's wrapInLayer) so consumer-authored
-          editorCss also can't out-prioritize Payload's own unlayered
-          admin styles on the host document, only inside the iframe
-          where it's the only stylesheet in play. */}
       {css && cssKey ? (
         <style key={cssKey} href={cssKey} precedence="puck-editor-styles">
-          {`@layer puck-editor-preview {\n${css}\n}\n`}
+          {css}
         </style>
       ) : null}
     </>

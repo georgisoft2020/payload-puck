@@ -201,6 +201,12 @@ export const IframeWrapper = memo(function IframeWrapper({
     const body = iframeDoc.body
     const html = iframeDoc.documentElement
 
+    // Mark the iframe's own <html> element so compiled/consumer CSS scoped
+    // to `html[data-puck-preview]` can match inside the preview iframe but
+    // never on the Payload admin host page (which never sets this attribute).
+    // Unconditional - not tied to dark/light state.
+    html.setAttribute('data-puck-preview', 'true')
+
     // Apply background - page-level override takes precedence
     if (pageBackground) {
       const bgStyles = backgroundValueToCSS(pageBackground)

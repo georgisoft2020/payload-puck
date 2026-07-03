@@ -9,6 +9,7 @@
 import type { PayloadHandler } from 'payload'
 import { readFileSync, statSync, existsSync } from 'fs'
 import { join } from 'path'
+import prefixSelector from 'postcss-prefix-selector'
 
 // Cache compiled CSS in memory with file modification time tracking
 interface CssCache {
@@ -19,15 +20,35 @@ interface CssCache {
 const cssCache = new Map<string, CssCache>()
 
 /**
- * Wraps compiled CSS in a named CSS layer so it can never out-prioritize
- * unlayered host-page CSS (e.g. Payload's own admin styles), per the CSS
- * Cascading Layers spec: unlayered styles always win over layered ones,
- * regardless of specificity or source order. Inside the Puck iframe, where
- * this is the only stylesheet present, the layer has no effect on whether
- * rules apply — only on cross-stylesheet priority.
+ * Scopes compiled CSS so it can only match elements inside the Puck
+ * preview iframe, never the Payload admin host page. `html`/`:root`
+ * rules target `html[data-puck-preview]` directly (the iframe's own
+ * `<html>` element, marked by IframeWrapper) rather than as a descendant
+ * — `:root` IS that element, not something nested inside it. `body`
+ * rules and everything else scope as normal descendants, since they
+ * genuinely are descendants of the marked `<html>` once mirrored into
+ * the iframe. On the host page, `<html>` is never marked, so none of
+ * these selectors can ever match anything there — this is what actually
+ * prevents the leak (an earlier attempt using a CSS `@layer` did not
+ * work, because Payload's own admin CSS is also Tailwind-based and also
+ * uses layers, so "unlayered beats layered" didn't apply).
  */
-function wrapInLayer(css: string): string {
-  return `@layer puck-editor-preview {\n${css}\n}\n`
+async function scopeToIframe(css: string): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const postcss: any = (await import(/* webpackIgnore: true */ 'postcss')).default
+  const prefix = 'html[data-puck-preview]'
+  const result = await postcss([
+    prefixSelector({
+      prefix,
+      transform: (_prefix: string, selector: string, prefixedSelector: string) => {
+        const trimmed = selector.trim()
+        if (trimmed === 'html' || trimmed === ':root') return prefix
+        if (trimmed === 'body') return `${prefix} body`
+        return prefixedSelector
+      },
+    }),
+  ]).process(css, { from: undefined }).async()
+  return result.css
 }
 
 /**
@@ -144,12 +165,12 @@ export function createStylesHandler(cssFilePath: string): PayloadHandler {
       // Read and compile CSS
       const rawCss = readFileSync(fullPath, 'utf-8')
       const compiledCss = await compileCss(rawCss, fullPath)
-      const wrappedCss = wrapInLayer(compiledCss)
+      const scopedCss = await scopeToIframe(compiledCss)
 
       // Update cache
-      cssCache.set(cssFilePath, { css: wrappedCss, mtime })
+      cssCache.set(cssFilePath, { css: scopedCss, mtime })
 
-      return new Response(wrappedCss, {
+      return new Response(scopedCss, {
         headers: {
           'Content-Type': 'text/css',
           'Cache-Control': 'public, max-age=31536000, immutable',
