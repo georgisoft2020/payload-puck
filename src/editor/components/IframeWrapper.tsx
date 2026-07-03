@@ -238,6 +238,19 @@ export const IframeWrapper = memo(function IframeWrapper({
   // are no stylesheets to wait for.
   const stylesReady = resolvedStylesheets.every((href) => loadedHrefs.has(href))
 
+  // Safety net: a <link>'s onLoad can fail to fire for a resource that's
+  // already complete in the browser cache before React attaches the
+  // handler (a known browser quirk, and the exact reason the pre-refactor
+  // implementation carried this same fallback). Without it, a missed event
+  // leaves `stylesReady` false forever, permanently blanking the iframe --
+  // worse than the FOUC this whole mechanism exists to prevent. `markLoaded`
+  // is idempotent, so this is a harmless no-op if the real event already
+  // fired first.
+  useEffect(() => {
+    const timers = resolvedStylesheets.map((href) => setTimeout(() => markLoaded(href), 2000))
+    return () => timers.forEach(clearTimeout)
+  }, [resolvedStylesheets, markLoaded])
+
   useEffect(() => {
     if (!iframeDoc) return
 
