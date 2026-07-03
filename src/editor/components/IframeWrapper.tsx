@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useEffect, useMemo, useState, createContext, useContext, type ReactNode, type ComponentType } from 'react'
+import { memo, useEffect, useMemo, useState, useCallback, createContext, useContext, type ReactNode, type ComponentType } from 'react'
 import { createUsePuck } from '@puckeditor/core'
 import type { LayoutDefinition } from '../../layouts/index.js'
 import { backgroundValueToCSS, type BackgroundValue } from '../../fields/shared.js'
@@ -100,14 +100,18 @@ export interface IframeWrapperProps {
    */
   defaultLayout?: string
   /**
-   * Stylesheet URLs to inject into the iframe.
+   * Stylesheet URLs to render inside the iframe.
    * These are merged from PuckConfigProvider and layout-specific settings.
    * Use this to provide frontend CSS (Tailwind, CSS variables, etc.) that
    * header/footer components need for proper styling.
+   *
+   * Rendered as ordinary React children (not host-document resources), so
+   * this CSS only ever affects the iframe's own document, never the
+   * Payload admin page it's embedded in.
    */
   editorStylesheets?: string[]
   /**
-   * Raw CSS to inject into the iframe.
+   * Raw CSS to render inside the iframe.
    * Merged from PuckConfigProvider and layout-specific settings.
    * Useful for CSS variables or style overrides.
    */
@@ -166,9 +170,6 @@ export const IframeWrapper = memo(function IframeWrapper({
 }: IframeWrapperProps) {
   const appState = usePuck((s) => s.appState)
 
-  // Track stylesheet loading state to force re-render when styles are ready
-  const [stylesLoaded, setStylesLoaded] = useState(false)
-
   // Check if we're in interactive mode (links should be clickable)
   const isInteractive = appState.ui.previewMode === 'interactive'
 
@@ -213,6 +214,43 @@ export const IframeWrapper = memo(function IframeWrapper({
   // Calculate isDark for context provider (same logic as in useEffect)
   const isDark = previewDarkModeOverride ?? layoutConfig.isDark
 
+  // Resolve relative stylesheet URLs to absolute URLs. Puck's iframe uses
+  // srcDoc, whose relative-URL resolution can't be relied on to match the
+  // host origin, so resolve explicitly against window.location.origin.
+  const resolvedStylesheets = useMemo(() => {
+    if (!editorStylesheets || editorStylesheets.length === 0) return []
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    return editorStylesheets.map((href) => (href.startsWith('/') ? `${origin}${href}` : href))
+  }, [editorStylesheets])
+
+  // Track which stylesheet URLs have finished loading (or errored, which we
+  // also count as "settled" so a broken URL can't block rendering forever).
+  // This accumulates across the component's lifetime rather than resetting
+  // per-layout: if a layout switches back to a previously-loaded stylesheet,
+  // it's already known-loaded and doesn't need to be waited on again.
+  const [loadedHrefs, setLoadedHrefs] = useState<ReadonlySet<string>>(() => new Set())
+  const markLoaded = useCallback((href: string) => {
+    setLoadedHrefs((prev) => (prev.has(href) ? prev : new Set(prev).add(href)))
+  }, [])
+
+  // Gate rendering children until every currently-relevant stylesheet has
+  // settled, to avoid a flash of unstyled content. Vacuously true when there
+  // are no stylesheets to wait for.
+  const stylesReady = resolvedStylesheets.every((href) => loadedHrefs.has(href))
+
+  // Safety net: a <link>'s onLoad can fail to fire for a resource that's
+  // already complete in the browser cache before React attaches the
+  // handler (a known browser quirk, and the exact reason the pre-refactor
+  // implementation carried this same fallback). Without it, a missed event
+  // leaves `stylesReady` false forever, permanently blanking the iframe --
+  // worse than the FOUC this whole mechanism exists to prevent. `markLoaded`
+  // is idempotent, so this is a harmless no-op if the real event already
+  // fired first.
+  useEffect(() => {
+    const timers = resolvedStylesheets.map((href) => setTimeout(() => markLoaded(href), 2000))
+    return () => timers.forEach(clearTimeout)
+  }, [resolvedStylesheets, markLoaded])
+
   useEffect(() => {
     if (!iframeDoc) return
 
@@ -247,110 +285,6 @@ export const IframeWrapper = memo(function IframeWrapper({
       html.classList.add('light')
       html.setAttribute('data-theme', 'light')
       body.style.color = '#1f2937' // gray-800
-    }
-
-    // Inject external stylesheets (Tailwind CSS, CSS variables, etc.)
-    // These provide the styles needed for header/footer components
-    if (editorStylesheets && editorStylesheets.length > 0) {
-      let pendingLoads = 0
-      let loadedCount = 0
-
-      const checkAllLoaded = () => {
-        loadedCount++
-        if (loadedCount >= pendingLoads) {
-          // All stylesheets loaded - force browser to recalculate styles
-          // This is necessary because the DOM was already rendered before CSS loaded
-          setStylesLoaded(true)
-
-          // Force a browser repaint after styles load
-          // Use multiple techniques to ensure CSS is applied to existing elements
-          requestAnimationFrame(() => {
-            if (!html || !body) return
-
-            // Technique 1: Re-apply theme classes (mimics what dark mode toggle does)
-            const isDark = previewDarkModeOverride ?? layoutConfig.isDark
-            if (isDark) {
-              html.classList.remove('dark')
-              void html.offsetHeight // Force reflow
-              html.classList.add('dark')
-            } else {
-              html.classList.remove('light')
-              void html.offsetHeight // Force reflow
-              html.classList.add('light')
-            }
-
-            // Technique 2: Toggle visibility to force repaint
-            body.style.visibility = 'hidden'
-            void body.offsetHeight
-            body.style.visibility = ''
-          })
-        }
-      }
-
-      // Get origin for resolving relative URLs
-      // Puck's iframe may use srcdoc which doesn't have a proper base URL,
-      // so relative paths like '/api/puck/styles' won't resolve correctly
-      const origin = typeof window !== 'undefined' ? window.location.origin : ''
-
-      // Track which stylesheets have been counted to avoid double-counting
-      const loadedIndexes = new Set<number>()
-
-      const markLoaded = (index: number) => {
-        if (loadedIndexes.has(index)) return
-        loadedIndexes.add(index)
-        checkAllLoaded()
-      }
-
-      editorStylesheets.forEach((href, index) => {
-        const linkId = `puck-editor-stylesheet-${index}`
-        const existingLink = iframeDoc.getElementById(linkId) as HTMLLinkElement | null
-
-        if (!existingLink) {
-          pendingLoads++
-          const link = iframeDoc.createElement('link')
-          link.id = linkId
-          link.rel = 'stylesheet'
-          // Resolve relative URLs to absolute URLs for iframe compatibility
-          link.href = href.startsWith('/') ? `${origin}${href}` : href
-          // Track when stylesheet loads
-          link.onload = () => markLoaded(index)
-          link.onerror = () => markLoaded(index) // Count errors too to avoid hanging
-          iframeDoc.head.appendChild(link)
-
-          // Fallback: if onload doesn't fire within 2 seconds, force trigger
-          // This handles edge cases with cached resources or browser quirks
-          setTimeout(() => {
-            if (!loadedIndexes.has(index)) {
-              markLoaded(index)
-            }
-          }, 2000)
-        } else if (!stylesLoaded) {
-          // Link exists - assume it's already loaded
-          pendingLoads++
-          // Immediately mark as loaded since it's already in the DOM
-          requestAnimationFrame(() => markLoaded(index))
-        }
-      })
-
-      // If no new stylesheets to load, mark as loaded
-      if (pendingLoads === 0 && !stylesLoaded) {
-        setStylesLoaded(true)
-      }
-    } else if (!stylesLoaded) {
-      // No stylesheets to load
-      setStylesLoaded(true)
-    }
-
-    // Inject custom CSS (CSS variables, overrides, etc.)
-    if (editorCss) {
-      const CUSTOM_CSS_ID = 'puck-editor-custom-css'
-      let style = iframeDoc.getElementById(CUSTOM_CSS_ID) as HTMLStyleElement | null
-      if (!style) {
-        style = iframeDoc.createElement('style')
-        style.id = CUSTOM_CSS_ID
-        iframeDoc.head.appendChild(style)
-      }
-      style.textContent = editorCss
     }
 
     // Inject richtext-output styles into the iframe for proper heading/list rendering
@@ -469,7 +403,7 @@ export const IframeWrapper = memo(function IframeWrapper({
       `
       iframeDoc.head.appendChild(style)
     }
-  }, [iframeDoc, layoutConfig, pageBackground, editorStylesheets, editorCss, stylesLoaded, previewDarkModeOverride])
+  }, [iframeDoc, layoutConfig, pageBackground, previewDarkModeOverride])
 
   // Get header/footer components from layout config
   const LayoutHeader = layoutConfig.header
@@ -493,6 +427,28 @@ export const IframeWrapper = memo(function IframeWrapper({
         ? !!LayoutFooter
         : !!LayoutFooter
 
+  // Stylesheet <link>/<style> elements, rendered as ordinary React children.
+  // Because these render inside the iframe's own portaled tree (not the host
+  // document), this CSS only ever applies inside the iframe -- it can never
+  // reach the Payload admin page. Being ordinary (non-resource) elements,
+  // React's normal reconciliation adds/removes/updates them correctly on
+  // every render, including layout switches that change which stylesheets
+  // apply -- no special keying tricks needed.
+  const styleElements = (
+    <>
+      {resolvedStylesheets.map((href) => (
+        <link
+          key={href}
+          rel="stylesheet"
+          href={href}
+          onLoad={() => markLoaded(href)}
+          onError={() => markLoaded(href)}
+        />
+      ))}
+      {editorCss ? <style>{editorCss}</style> : null}
+    </>
+  )
+
   // If we have header or footer to show, wrap in flex container to ensure proper layout
   if (shouldShowHeader || shouldShowFooter) {
     // Calculate content padding for sticky headers (only if header is actually shown)
@@ -508,36 +464,32 @@ export const IframeWrapper = memo(function IframeWrapper({
       ? {}
       : { pointerEvents: 'none' }
 
-    // Use key to force re-render when styles finish loading
-    // This ensures Tailwind classes are applied after the stylesheet loads
     return (
       <PuckPreviewThemeContext.Provider value={isDark}>
-        <div
-          key={stylesLoaded ? 'styles-loaded' : 'styles-loading'}
-          style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}
-        >
-          {shouldShowHeader && LayoutHeader && (
-            <div style={headerFooterStyle}>
-              <LayoutHeader />
-            </div>
-          )}
-          <div style={contentStyle}>{children}</div>
-          {shouldShowFooter && LayoutFooter && (
-            <div style={headerFooterStyle}>
-              <LayoutFooter />
-            </div>
-          )}
-        </div>
+        {styleElements}
+        {stylesReady && (
+          <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+            {shouldShowHeader && LayoutHeader && (
+              <div style={headerFooterStyle}>
+                <LayoutHeader />
+              </div>
+            )}
+            <div style={contentStyle}>{children}</div>
+            {shouldShowFooter && LayoutFooter && (
+              <div style={headerFooterStyle}>
+                <LayoutFooter />
+              </div>
+            )}
+          </div>
+        )}
       </PuckPreviewThemeContext.Provider>
     )
   }
 
-  // Use key to force re-render when styles finish loading
   return (
     <PuckPreviewThemeContext.Provider value={isDark}>
-      <div key={stylesLoaded ? 'styles-loaded' : 'styles-loading'}>
-        {children}
-      </div>
+      {styleElements}
+      {stylesReady && <div>{children}</div>}
     </PuckPreviewThemeContext.Provider>
   )
 })

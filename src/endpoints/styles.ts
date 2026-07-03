@@ -6,7 +6,7 @@
  * Loads the project's postcss.config.js for proper plugin configuration.
  */
 
-import type { PayloadHandler } from 'payload'
+import type { PayloadHandler, PayloadRequest } from 'payload'
 import { readFileSync, statSync, existsSync } from 'fs'
 import { join } from 'path'
 
@@ -98,7 +98,7 @@ async function compileCss(css: string, filePath: string): Promise<string> {
  * @returns PayloadHandler that serves compiled CSS
  */
 export function createStylesHandler(cssFilePath: string): PayloadHandler {
-  return async () => {
+  return async (req: PayloadRequest) => {
     try {
       const fullPath = join(process.cwd(), cssFilePath)
 
@@ -116,6 +116,22 @@ export function createStylesHandler(cssFilePath: string): PayloadHandler {
       // Get file modification time for cache invalidation
       const stats = statSync(fullPath)
       const mtime = stats.mtimeMs
+      // ETag derived from mtime - changes whenever the source file changes,
+      // whether from a dev-mode edit or a version upgrade recompiling output.
+      const etag = `"${mtime}"`
+
+      // If the browser's cached copy is still fresh, tell it so without
+      // doing any file read/compilation work.
+      const ifNoneMatch = req.headers?.get('if-none-match')
+      if (ifNoneMatch === etag) {
+        return new Response(null, {
+          status: 304,
+          headers: {
+            ETag: etag,
+            'Cache-Control': 'no-cache',
+          },
+        })
+      }
 
       // Check cache
       const cached = cssCache.get(cssFilePath)
@@ -123,7 +139,9 @@ export function createStylesHandler(cssFilePath: string): PayloadHandler {
         return new Response(cached.css, {
           headers: {
             'Content-Type': 'text/css',
-            'Cache-Control': 'public, max-age=31536000, immutable',
+            'Cache-Control': 'no-cache',
+            ETag: etag,
+            'Last-Modified': new Date(mtime).toUTCString(),
             'X-Puck-Cache': 'hit',
           },
         })
@@ -139,7 +157,9 @@ export function createStylesHandler(cssFilePath: string): PayloadHandler {
       return new Response(compiledCss, {
         headers: {
           'Content-Type': 'text/css',
-          'Cache-Control': 'public, max-age=31536000, immutable',
+          'Cache-Control': 'no-cache',
+          ETag: etag,
+          'Last-Modified': new Date(mtime).toUTCString(),
           'X-Puck-Cache': 'miss',
         },
       })

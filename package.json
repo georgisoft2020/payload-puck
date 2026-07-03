@@ -173,7 +173,7 @@
   "devDependencies": {
     "@payloadcms/next": "^3.84.1",
     "@payloadcms/ui": "^3.84.1",
-    "@puckeditor/core": "^0.21.2",
+    "@puckeditor/core": "^0.22.0",
     "@swc/cli": "^0.6.0",
     "@swc/core": "^1.15.18",
     "@types/node": "^24.12.0",
