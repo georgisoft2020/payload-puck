@@ -68,9 +68,6 @@ importers:
       postcss-load-config:
         specifier: '>=4.0.0'
         version: 6.0.1(jiti@2.6.1)(postcss@8.5.8)(tsx@4.21.0)
-      postcss-prefix-selector:
-        specifier: ^2.1.1
-        version: 2.1.1(postcss@8.5.8)
       tailwindcss:
         specifier: '>=3.0.0 || >=4.0.0'
         version: 4.2.1
@@ -96,9 +93,6 @@ importers:
       '@types/node':
         specifier: ^24.12.0
         version: 24.12.0
-      '@types/postcss-prefix-selector':
-        specifier: ^1.16.3
-        version: 1.16.3
       '@types/react':
         specifier: ^19.2.14
         version: 19.2.14
@@ -1548,9 +1542,6 @@ packages:
   '@types/parse-json@4.0.2':
     resolution: {integrity: sha512-dISoDXWWQwUquiKsyZ4Ng+HX2KsPL7LyHKHQwgGFEA3IaKac4Obd+h2a/a6waisAoepJlBcx9paWqjA8/HVjCw==}
 
-  '@types/postcss-prefix-selector@1.16.3':
-    resolution: {integrity: sha512-YZLPWRkJIrYjwaqojVDXzaRCAEYslRAm8Shznwwn+ZFA4iKQR4LZlS3d+ZMVteFz4iyQnngZZG7k/GIzV1f3mQ==}
-
   '@types/react-dom@19.2.3':
     resolution: {integrity: sha512-jp2L/eY6fn+KgVVQAOqYItbF0VY/YApe5Mz2F0aykSO8gx31bYCZyvSeYxCHKvzHG5eZjc+zyaS5BrBWya2+kQ==}
     peerDependencies:
@@ -2807,11 +2798,6 @@ packages:
         optional: true
       yaml:
         optional: true
-
-  postcss-prefix-selector@2.1.1:
-    resolution: {integrity: sha512-ZBgf427Et6+XnrnJ9VXtJEKCjJwTvn2wn/qMg+wvvlRhIeFIAxdbrlZZ0CSsWYMJfcyPLBh8ogj5O1kb/Mcx3g==}
-    peerDependencies:
-      postcss: ^8.0.0
 
   postcss@8.4.31:
     resolution: {integrity: sha512-PS08Iboia9mts/2ygV3eLpY5ghnUcfLV/EXTOW1E2qYxJKGGBUtNjN76FYHnMs36RmARn41bC0AZmn+rR0OVpQ==}
@@ -4910,10 +4896,6 @@ snapshots:
 
   '@types/parse-json@4.0.2': {}
 
-  '@types/postcss-prefix-selector@1.16.3':
-    dependencies:
-      postcss: 8.5.8
-
   '@types/react-dom@19.2.3(@types/react@19.2.14)':
     dependencies:
       '@types/react': 19.2.14
@@ -6338,10 +6320,6 @@ snapshots:
       jiti: 2.6.1
       postcss: 8.5.8
       tsx: 4.21.0
-
-  postcss-prefix-selector@2.1.1(postcss@8.5.8):
-    dependencies:
-      postcss: 8.5.8
 
   postcss@8.4.31:
     dependencies:

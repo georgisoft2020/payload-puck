@@ -20,7 +20,6 @@
 import type { NextConfig } from 'next'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, join, resolve } from 'path'
-import prefixSelector from 'postcss-prefix-selector'
 
 /**
  * Options for the withPuckCSS wrapper
@@ -49,38 +48,6 @@ export interface WithPuckCSSOptions {
  * Default output filename for compiled CSS
  */
 export const PUCK_CSS_OUTPUT_DEFAULT = 'puck-editor-styles.css'
-
-/**
- * Scopes compiled CSS so it can only match elements inside the Puck
- * preview iframe, never the Payload admin host page. `html`/`:root`
- * rules target `html[data-puck-preview]` directly (the iframe's own
- * `<html>` element, marked by IframeWrapper) rather than as a descendant
- * — `:root` IS that element, not something nested inside it. `body`
- * rules and everything else scope as normal descendants, since they
- * genuinely are descendants of the marked `<html>` once mirrored into
- * the iframe. On the host page, `<html>` is never marked, so none of
- * these selectors can ever match anything there — this is what actually
- * prevents the leak (an earlier attempt using a CSS `@layer` did not
- * work, because Payload's own admin CSS is also Tailwind-based and also
- * uses layers, so "unlayered beats layered" didn't apply).
- */
-async function scopeToIframe(css: string): Promise<string> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const postcss: any = (await import(/* webpackIgnore: true */ 'postcss')).default
-  const prefix = 'html[data-puck-preview]'
-  const result = await postcss([
-    prefixSelector({
-      prefix,
-      transform: (_prefix: string, selector: string, prefixedSelector: string) => {
-        const trimmed = selector.trim()
-        if (trimmed === 'html' || trimmed === ':root') return prefix
-        if (trimmed === 'body') return `${prefix} body`
-        return prefixedSelector
-      },
-    }),
-  ]).process(css, { from: undefined }).async()
-  return result.css
-}
 
 /**
  * Compile CSS using PostCSS with the project's configuration
@@ -174,8 +141,7 @@ class PuckCSSWebpackPlugin {
         }
 
         // Write compiled CSS
-        const scopedCss = await scopeToIframe(compiledCss)
-        writeFileSync(outputPath, scopedCss, 'utf-8')
+        writeFileSync(outputPath, compiledCss, 'utf-8')
 
         console.log(`[payload-puck] CSS compiled successfully (${(compiledCss.length / 1024).toFixed(1)}KB)`)
       } catch (error) {

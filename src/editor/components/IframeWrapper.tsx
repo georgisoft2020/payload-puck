@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useEffect, useMemo, createContext, useContext, type ReactNode, type ComponentType } from 'react'
+import { memo, useEffect, useMemo, useState, useCallback, createContext, useContext, type ReactNode, type ComponentType } from 'react'
 import { createUsePuck } from '@puckeditor/core'
 import type { LayoutDefinition } from '../../layouts/index.js'
 import { backgroundValueToCSS, type BackgroundValue } from '../../fields/shared.js'
@@ -100,6 +100,23 @@ export interface IframeWrapperProps {
    */
   defaultLayout?: string
   /**
+   * Stylesheet URLs to render inside the iframe.
+   * These are merged from PuckConfigProvider and layout-specific settings.
+   * Use this to provide frontend CSS (Tailwind, CSS variables, etc.) that
+   * header/footer components need for proper styling.
+   *
+   * Rendered as ordinary React children (not host-document resources), so
+   * this CSS only ever affects the iframe's own document, never the
+   * Payload admin page it's embedded in.
+   */
+  editorStylesheets?: string[]
+  /**
+   * Raw CSS to render inside the iframe.
+   * Merged from PuckConfigProvider and layout-specific settings.
+   * Useful for CSS variables or style overrides.
+   */
+  editorCss?: string
+  /**
    * Override the layout's dark mode setting for the preview.
    * When true, forces dark mode in the preview iframe.
    * When false, forces light mode in the preview iframe.
@@ -147,6 +164,8 @@ export const IframeWrapper = memo(function IframeWrapper({
   layoutStyles,
   layoutKey = 'pageLayout',
   defaultLayout = 'default',
+  editorStylesheets,
+  editorCss,
   previewDarkModeOverride,
 }: IframeWrapperProps) {
   const appState = usePuck((s) => s.appState)
@@ -195,17 +214,35 @@ export const IframeWrapper = memo(function IframeWrapper({
   // Calculate isDark for context provider (same logic as in useEffect)
   const isDark = previewDarkModeOverride ?? layoutConfig.isDark
 
+  // Resolve relative stylesheet URLs to absolute URLs. Puck's iframe uses
+  // srcDoc, whose relative-URL resolution can't be relied on to match the
+  // host origin, so resolve explicitly against window.location.origin.
+  const resolvedStylesheets = useMemo(() => {
+    if (!editorStylesheets || editorStylesheets.length === 0) return []
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    return editorStylesheets.map((href) => (href.startsWith('/') ? `${origin}${href}` : href))
+  }, [editorStylesheets])
+
+  // Track which stylesheet URLs have finished loading (or errored, which we
+  // also count as "settled" so a broken URL can't block rendering forever).
+  // This accumulates across the component's lifetime rather than resetting
+  // per-layout: if a layout switches back to a previously-loaded stylesheet,
+  // it's already known-loaded and doesn't need to be waited on again.
+  const [loadedHrefs, setLoadedHrefs] = useState<ReadonlySet<string>>(() => new Set())
+  const markLoaded = useCallback((href: string) => {
+    setLoadedHrefs((prev) => (prev.has(href) ? prev : new Set(prev).add(href)))
+  }, [])
+
+  // Gate rendering children until every currently-relevant stylesheet has
+  // settled, to avoid a flash of unstyled content. Vacuously true when there
+  // are no stylesheets to wait for.
+  const stylesReady = resolvedStylesheets.every((href) => loadedHrefs.has(href))
+
   useEffect(() => {
     if (!iframeDoc) return
 
     const body = iframeDoc.body
     const html = iframeDoc.documentElement
-
-    // Mark the iframe's own <html> element so compiled/consumer CSS scoped
-    // to `html[data-puck-preview]` can match inside the preview iframe but
-    // never on the Payload admin host page (which never sets this attribute).
-    // Unconditional - not tied to dark/light state.
-    html.setAttribute('data-puck-preview', 'true')
 
     // Apply background - page-level override takes precedence
     if (pageBackground) {
@@ -377,6 +414,28 @@ export const IframeWrapper = memo(function IframeWrapper({
         ? !!LayoutFooter
         : !!LayoutFooter
 
+  // Stylesheet <link>/<style> elements, rendered as ordinary React children.
+  // Because these render inside the iframe's own portaled tree (not the host
+  // document), this CSS only ever applies inside the iframe -- it can never
+  // reach the Payload admin page. Being ordinary (non-resource) elements,
+  // React's normal reconciliation adds/removes/updates them correctly on
+  // every render, including layout switches that change which stylesheets
+  // apply -- no special keying tricks needed.
+  const styleElements = (
+    <>
+      {resolvedStylesheets.map((href) => (
+        <link
+          key={href}
+          rel="stylesheet"
+          href={href}
+          onLoad={() => markLoaded(href)}
+          onError={() => markLoaded(href)}
+        />
+      ))}
+      {editorCss ? <style>{editorCss}</style> : null}
+    </>
+  )
+
   // If we have header or footer to show, wrap in flex container to ensure proper layout
   if (shouldShowHeader || shouldShowFooter) {
     // Calculate content padding for sticky headers (only if header is actually shown)
@@ -394,26 +453,30 @@ export const IframeWrapper = memo(function IframeWrapper({
 
     return (
       <PuckPreviewThemeContext.Provider value={isDark}>
-        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-          {shouldShowHeader && LayoutHeader && (
-            <div style={headerFooterStyle}>
-              <LayoutHeader />
-            </div>
-          )}
-          <div style={contentStyle}>{children}</div>
-          {shouldShowFooter && LayoutFooter && (
-            <div style={headerFooterStyle}>
-              <LayoutFooter />
-            </div>
-          )}
-        </div>
+        {styleElements}
+        {stylesReady && (
+          <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+            {shouldShowHeader && LayoutHeader && (
+              <div style={headerFooterStyle}>
+                <LayoutHeader />
+              </div>
+            )}
+            <div style={contentStyle}>{children}</div>
+            {shouldShowFooter && LayoutFooter && (
+              <div style={headerFooterStyle}>
+                <LayoutFooter />
+              </div>
+            )}
+          </div>
+        )}
       </PuckPreviewThemeContext.Provider>
     )
   }
 
   return (
     <PuckPreviewThemeContext.Provider value={isDark}>
-      <div>{children}</div>
+      {styleElements}
+      {stylesReady && <div>{children}</div>}
     </PuckPreviewThemeContext.Provider>
   )
 })

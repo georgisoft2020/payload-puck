@@ -9,11 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Editor preview styling now uses Puck's native `syncHostStyles`/`waitForStyles` instead of manual iframe injection.** The consumer's compiled stylesheet (`editorStylesheets`/`editorCss`, including per-layout overrides) is now rendered on the host document and mirrored into the Puck preview iframe by `@puckeditor/core` itself, replacing ~90 lines of hand-rolled `<link>` injection, load tracking, timeout fallbacks, and forced-repaint workarounds in `IframeWrapper`. Requires bumping the `@puckeditor/core` peer dependency to `>=0.22.0`.
+- **Bumped `@puckeditor/core` peer dependency to `>=0.22.0`** to pick up Puck's native `waitForStyles` iframe support.
+- **The editor's `/api/puck/styles` dev-time compile endpoint now uses conditional HTTP caching (`ETag`/`Last-Modified`, `Cache-Control: no-cache`) instead of `immutable, max-age=31536000`.** The previous header told browsers to cache the compiled CSS forever on a URL with no versioning, so browsers never learned when the underlying source CSS or the plugin's own compilation logic changed. Revalidation is now cheap (a `304` when unchanged) but always happens.
+- **`IframeWrapper`'s editor stylesheet/CSS handling was simplified.** The consumer's stylesheets/CSS are still rendered directly inside the Puck preview iframe (never the host admin page — this was investigated and deliberately rejected; see below), but now as ordinary React children instead of manual `document.createElement`/`appendChild` calls, letting normal React reconciliation add/remove/update them instead of hand-rolled DOM bookkeeping. FOUC prevention is now a small `onLoad`/`onError`-driven gate (~20 lines) instead of the previous timeout-fallback/forced-reflow/remount-key machinery.
 
-### Breaking
+### Investigated and rejected
 
-- **`IframeWrapper`/`IframeWrapperProps` and `PreviewModal`/`PreviewModalProps` (exported from `@delmaredigital/payload-puck/editor`) no longer accept `editorStylesheets`/`editorCss` props.** Only affects consumers who compose these components directly in a custom `overrides.iframe` instead of using the top-level `editorStylesheets`/`editorCss` props on `PuckEditor`/`PuckConfigProvider`/layout definitions, which are unaffected.
+- **Rendering the compiled stylesheet on the host admin document so Puck's native `syncHostStyles` could mirror it into the iframe.** This was implemented, then reverted after live testing found it leaked the consumer's Tailwind preflight/reset rules into Payload's own admin UI (confirmed: it broke the admin nav sidebar's styling). A CSS `@layer` fix didn't work (Payload's own admin CSS is also Tailwind-based and also uses layers). A selector-scoping fix (a new `postcss-prefix-selector` dependency, marking the iframe's own `<html>` and rewriting selectors) closed that specific leak but only handled exact `html`/`:root`/`body` selectors — an independent review found it would silently fail to scope realistic compound selectors (e.g. `.dark .foo`, `html.dark {}`, `:root[data-theme='dark']`), a worse fragility class than what it replaced. Reverted in favor of keeping the stylesheet iframe-local, which has zero host-leak risk by construction.
 
 ## [0.6.29] - 2026-06-03
 
