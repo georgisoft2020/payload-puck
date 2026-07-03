@@ -15,6 +15,7 @@ import { Maximize2 } from 'lucide-react'
 import { HeaderActions } from './components/HeaderActions.js'
 import { IframeWrapper, type LayoutStyle } from './components/IframeWrapper.js'
 import { PreviewModal } from './components/PreviewModal.js'
+import { EditorStyleResources } from './components/EditorStyleResources.js'
 import { DarkModeStyles } from './components/DarkModeStyles.js'
 import { useUnsavedChanges } from './hooks/useUnsavedChanges.js'
 import { createVersionHistoryPlugin } from './plugins/versionHistoryPlugin.js'
@@ -688,8 +689,6 @@ export function PuckEditorImpl({
           layouts={layouts}
           layoutStyles={layoutStyles}
           layoutKey={layoutKey}
-          editorStylesheets={mergedEditorStylesheets}
-          editorCss={mergedEditorCss}
           previewDarkModeOverride={showPreviewDarkModeToggle ? previewDarkMode : undefined}
         >
           {children}
@@ -719,8 +718,6 @@ export function PuckEditorImpl({
       layoutStyles,
       layoutKey,
       customOverrides,
-      mergedEditorStylesheets,
-      mergedEditorCss,
       showPreviewDarkModeToggle,
       previewDarkMode,
       setPreviewDarkMode,
@@ -862,6 +859,11 @@ export function PuckEditorImpl({
 
   const editorContent = (
     <>
+      {/* Consumer's compiled stylesheet/CSS, rendered once as host-document
+          resources. Puck's native syncHostStyles mirrors these into the
+          preview iframe; PreviewModal shares this same host document, so
+          it needs no stylesheet handling of its own. */}
+      <EditorStyleResources stylesheets={mergedEditorStylesheets} css={mergedEditorCss} />
       {/* Dark mode CSS injection - automatically detects PayloadCMS dark mode */}
       {autoDetectDarkMode && <DarkModeStyles />}
       <div className="h-screen">
@@ -874,7 +876,7 @@ export function PuckEditorImpl({
           plugins={resolvedPlugins}
           viewports={enableViewports ? DEFAULT_VIEWPORTS : undefined}
           overrides={overrides}
-          iframe={{ waitForStyles: true }}
+          iframe={{ waitForStyles: true, syncHostStyles: true }}
           _experimentalFullScreenCanvas={experimentalFullScreenCanvas}
         />
       </div>
@@ -888,8 +890,6 @@ export function PuckEditorImpl({
         hasUnsavedChanges={hasUnsavedChanges}
         onSave={handleSaveFromPreview}
         isSaving={isSaving}
-        editorStylesheets={mergedEditorStylesheets}
-        editorCss={mergedEditorCss}
         config={config}
       />
     </>
