@@ -34,7 +34,7 @@ pnpm add @delmaredigital/payload-puck @puckeditor/core
 
 | Dependency | Version |
 |------------|---------|
-| `@puckeditor/core` | >= 0.21.0 |
+| `@puckeditor/core` | >= 0.22.0 |
 | `payload` | >= 3.69.0 |
 | `@payloadcms/next` | >= 3.69.0 |
 | `next` | >= 15.4.8 (see security note below) |

@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Editor preview styling now uses Puck's native `syncHostStyles`/`waitForStyles` instead of manual iframe injection.** The consumer's compiled stylesheet (`editorStylesheets`/`editorCss`, including per-layout overrides) is now rendered on the host document and mirrored into the Puck preview iframe by `@puckeditor/core` itself, replacing ~90 lines of hand-rolled `<link>` injection, load tracking, timeout fallbacks, and forced-repaint workarounds in `IframeWrapper`. Requires bumping the `@puckeditor/core` peer dependency to `>=0.22.0`.
+
+### Breaking
+
+- **`IframeWrapper`/`IframeWrapperProps` and `PreviewModal`/`PreviewModalProps` (exported from `@delmaredigital/payload-puck/editor`) no longer accept `editorStylesheets`/`editorCss` props.** Only affects consumers who compose these components directly in a custom `overrides.iframe` instead of using the top-level `editorStylesheets`/`editorCss` props on `PuckEditor`/`PuckConfigProvider`/layout definitions, which are unaffected.
+
 ## [0.6.29] - 2026-06-03
 
 ### Fixed
